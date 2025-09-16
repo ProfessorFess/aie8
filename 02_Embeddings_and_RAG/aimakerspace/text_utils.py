@@ -1,5 +1,8 @@
 import os
-from typing import List
+import re
+from typing import List, Dict, Any, Optional
+from youtube_transcript_api import YouTubeTranscriptApi
+import requests
 
 
 class TextFileLoader:
@@ -60,6 +63,102 @@ class CharacterTextSplitter:
         for text in texts:
             chunks.extend(self.split(text))
         return chunks
+
+
+class YouTubeLoader:
+    def __init__(self, url: str, include_metadata: bool = True):
+        """
+        Initialize YouTubeLoader with a YouTube URL.
+        
+        :param url: YouTube video URL (supports various formats)
+        :param include_metadata: Whether to include video metadata in the document
+        """
+        self.url = url
+        self.include_metadata = include_metadata
+        self.documents = []
+        self.metadata = {}
+        self.video_id = self._extract_video_id(url)
+        
+    def _extract_video_id(self, url: str) -> str:
+        """Extract video ID from various YouTube URL formats."""
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+            r'youtube\.com\/v\/([^&\n?#]+)',
+            r'youtube\.com\/embed\/([^&\n?#]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        raise ValueError(f"Could not extract video ID from URL: {url}")
+    
+    def _get_video_metadata(self) -> Dict[str, Any]:
+        """Get basic video metadata using YouTube's oEmbed API."""
+        try:
+            oembed_url = f"https://www.youtube.com/oembed?url={self.url}&format=json"
+            response = requests.get(oembed_url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Warning: Could not fetch video metadata: {e}")
+            return {"title": "Unknown", "author_name": "Unknown", "provider_name": "YouTube"}
+    
+    def _get_transcript(self) -> str:
+        """Get video transcript using youtube-transcript-api."""
+        try:
+            # Create an instance of YouTubeTranscriptApi
+            api = YouTubeTranscriptApi()
+            
+            # Try to get transcript in English first
+            try:
+                transcript_data = api.fetch(self.video_id, languages=['en'])
+            except:
+                # If English not available, get any available transcript
+                transcript_data = api.fetch(self.video_id)
+            
+            # Combine all transcript segments into a single text
+            full_transcript = " ".join([segment.text for segment in transcript_data.snippets])
+            return full_transcript
+            
+        except Exception as e:
+            raise ValueError(f"Could not retrieve transcript for video {self.video_id}: {e}")
+    
+    def load(self):
+        """Load YouTube video transcript and metadata."""
+        try:
+            # Get transcript
+            transcript = self._get_transcript()
+            
+            # Get metadata if requested
+            if self.include_metadata:
+                self.metadata = self._get_video_metadata()
+                
+                # Create a formatted document with metadata and transcript
+                document = f"""Title: {self.metadata.get('title', 'Unknown')}
+Author: {self.metadata.get('author_name', 'Unknown')}
+Video ID: {self.video_id}
+URL: {self.url}
+
+Transcript:
+{transcript}"""
+            else:
+                document = transcript
+            
+            self.documents.append(document)
+            
+        except Exception as e:
+            raise ValueError(f"Failed to load YouTube video: {e}")
+    
+    def load_documents(self) -> List[str]:
+        """Load documents and return them."""
+        self.load()
+        return self.documents
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get video metadata."""
+        return self.metadata
 
 
 if __name__ == "__main__":
