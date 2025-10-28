@@ -39,7 +39,18 @@ Run the repository and complete the following:
 Compare the `agent` and `agent_helpful` assistants defined in `langgraph.json`. Where does the helpfulness evaluator fit in the graph, and under what condition should execution route back to the agent vs. terminate?
 
 ##### ✅ Answer:
-_(enter answer here)_
+The `agent` assistant uses a simple graph with two nodes: "agent" and "action". It routes directly from the agent to either tool execution (if tool calls are needed) or terminates. The `agent_helpful` assistant adds a third "helpfulness" node that evaluates whether the agent's response adequately addresses the user's query.
+
+The helpfulness evaluator fits into the graph after the agent completes its response (when no tool calls are needed). The routing logic works as follows:
+- If the agent's response includes tool calls → route to "action" node
+- If the agent's response doesn't include tool calls → route to "helpfulness" node
+
+The helpfulness evaluator then decides whether to:
+- Terminate (if response is helpful - "HELPFULNESS:Y")
+- Continue back to the agent (if response is unhelpful - "HELPFULNESS:N") 
+- Terminate after loop limit (if more than 10 messages to prevent infinite loops)
+
+This creates a feedback loop where the agent can refine its response if the helpfulness evaluator determines it didn't adequately address the user's query.
 
 #### 🏗️ Activity #1 Debugging A Graph
 
@@ -50,7 +61,21 @@ Select the `agent_with_helpfulness` and set one or more interrupts (at least one
 What are your thoughts on when you would use a Before interrupt vs. an After interrupt?
 
 ##### ✅ Answer:
-_(enter answer here)_
+**Before interrupts** are useful when you want to:
+- Inspect or modify the input state before a node executes
+- Add validation logic to prevent certain operations
+- Inject additional context or data into the state
+- Debug by examining what data is being passed to a node
+- Implement conditional logic that might skip a node entirely
+
+**After interrupts** are useful when you want to:
+- Examine the output/results of a node after it completes
+- Modify the state based on the node's results before continuing
+- Implement post-processing logic or cleanup
+- Debug by seeing what a node produced
+- Add logging or monitoring after node execution
+
+In practice, Before interrupts are great for input validation and preprocessing, while After interrupts are ideal for output processing and result analysis. The choice depends on whether you need to act on the input to a node or the output from a node.
 
 
 
