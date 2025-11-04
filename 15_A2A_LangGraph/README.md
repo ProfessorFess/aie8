@@ -88,6 +88,7 @@ Do this by creating a Simple Agent that can make API calls to the 🤖Agent Node
 What are the core components of an `AgentCard`?
 
 ##### ✅ Answer:
+The core components of an AgentCard include identifying information about the agent, its capabilities or actions, required inputs, and output formats. These elements describe how the agent operates and interacts within the protocol.
 
 <br />
 
@@ -96,6 +97,7 @@ What are the core components of an `AgentCard`?
 Why is A2A (and other such protocols) important in your own words?
 
 ##### ✅ Answer:
+A2A and similar protocols are important because they provide standardized ways for agents and systems to communicate and collaborate, making it easier to integrate diverse technologies seamlessly. This accelerates innovation and makes new possibilities for automation and intelligent workflows.
 
 <br /><br />
 
