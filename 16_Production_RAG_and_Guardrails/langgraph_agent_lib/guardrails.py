@@ -31,9 +31,13 @@ class GuardrailsState(TypedDict):
     Attributes:
         messages: List of messages in the conversation history.
         validation_results: Optional validation results from guardrails.
+        validation_error: Optional error message from failed validation.
+        refinement_count: Number of refinement attempts.
     """
     messages: Annotated[List[BaseMessage], add_messages]
     validation_results: Optional[Dict[str, Any]]
+    validation_error: Optional[str]
+    refinement_count: int
 
 
 def create_guardrails_guard(
@@ -258,6 +262,198 @@ def validate_output(
         }
 
 
+def create_input_guard_node(
+    input_guard: Guard,
+    max_refinements: int = 3
+):
+    """Create a LangGraph node for input validation with refinement support.
+    
+    Args:
+        input_guard: Guard for validating user inputs.
+        max_refinements: Maximum number of refinement attempts. Default: 3.
+        
+    Returns:
+        A function that can be used as a LangGraph node.
+    """
+    def input_guard_node(state: GuardrailsState) -> Dict[str, Any]:
+        """Validate user input with guardrails.
+        
+        Args:
+            state: Current agent state with messages.
+            
+        Returns:
+            Updated state with validation results.
+        """
+        messages = state.get("messages", [])
+        refinement_count = state.get("refinement_count", 0)
+        
+        if not messages:
+            return {"validation_results": None, "validation_error": None}
+        
+        last_message = messages[-1]
+        
+        if not isinstance(last_message, HumanMessage):
+            return {"validation_results": None, "validation_error": None}
+        
+        try:
+            logger.info(f"Validating user input (attempt {refinement_count + 1}/{max_refinements + 1})")
+            result = validate_input(
+                input_guard,
+                last_message.content,
+                raise_on_failure=False  # Don't raise, return error instead
+            )
+            
+            validation_result = {
+                "type": "input",
+                "passed": result["validation_passed"],
+                "validated_output": result.get("validated_output"),
+                "error": result.get("error")
+            }
+            
+            if result["validation_passed"]:
+                logger.info("Input validation passed")
+                return {
+                    "validation_results": validation_result,
+                    "validation_error": None,
+                    "refinement_count": 0
+                }
+            else:
+                error_msg = result.get("error", "Input validation failed")
+                logger.warning(f"Input validation failed: {error_msg}")
+                
+                if refinement_count >= max_refinements:
+                    logger.error(f"Max refinements ({max_refinements}) reached")
+                    return {
+                        "validation_results": validation_result,
+                        "validation_error": f"Input validation failed after {max_refinements} attempts: {error_msg}",
+                        "refinement_count": refinement_count
+                    }
+                
+                return {
+                    "validation_results": validation_result,
+                    "validation_error": error_msg,
+                    "refinement_count": refinement_count + 1
+                }
+                
+        except Exception as e:
+            logger.error(f"Input validation error: {e}", exc_info=True)
+            return {
+                "validation_results": {
+                    "type": "input",
+                    "passed": False,
+                    "error": str(e)
+                },
+                "validation_error": str(e),
+                "refinement_count": refinement_count
+            }
+    
+    return input_guard_node
+
+
+def create_output_guard_node(
+    output_guard: Guard,
+    context_retriever: Optional[Any] = None,
+    max_refinements: int = 3
+):
+    """Create a LangGraph node for output validation with refinement support.
+    
+    Args:
+        output_guard: Guard for validating agent outputs.
+        context_retriever: Optional retriever to get context for factuality checking.
+        max_refinements: Maximum number of refinement attempts. Default: 3.
+        
+    Returns:
+        A function that can be used as a LangGraph node.
+    """
+    def output_guard_node(state: GuardrailsState) -> Dict[str, Any]:
+        """Validate agent output with guardrails.
+        
+        Args:
+            state: Current agent state with messages.
+            
+        Returns:
+            Updated state with validation results.
+        """
+        messages = state.get("messages", [])
+        refinement_count = state.get("refinement_count", 0)
+        
+        if not messages:
+            return {"validation_results": None, "validation_error": None}
+        
+        last_message = messages[-1]
+        
+        if not isinstance(last_message, AIMessage):
+            return {"validation_results": None, "validation_error": None}
+        
+        try:
+            logger.info(f"Validating agent output (attempt {refinement_count + 1}/{max_refinements + 1})")
+            
+            # Get context if available for factuality checking
+            context = None
+            if context_retriever:
+                try:
+                    # Try to get context from previous messages
+                    for msg in reversed(messages[:-1]):
+                        if hasattr(msg, "content") and "context" in str(msg.content).lower():
+                            context = str(msg.content)
+                            break
+                except Exception:
+                    pass
+            
+            result = validate_output(
+                output_guard,
+                last_message.content,
+                context=context,
+                raise_on_failure=False  # Don't raise, return error instead
+            )
+            
+            validation_result = {
+                "type": "output",
+                "passed": result["validation_passed"],
+                "validated_output": result.get("validated_output"),
+                "error": result.get("error")
+            }
+            
+            if result["validation_passed"]:
+                logger.info("Output validation passed")
+                return {
+                    "validation_results": validation_result,
+                    "validation_error": None,
+                    "refinement_count": 0
+                }
+            else:
+                error_msg = result.get("error", "Output validation failed")
+                logger.warning(f"Output validation failed: {error_msg}")
+                
+                if refinement_count >= max_refinements:
+                    logger.error(f"Max refinements ({max_refinements}) reached")
+                    return {
+                        "validation_results": validation_result,
+                        "validation_error": f"Output validation failed after {max_refinements} attempts: {error_msg}",
+                        "refinement_count": refinement_count
+                    }
+                
+                return {
+                    "validation_results": validation_result,
+                    "validation_error": error_msg,
+                    "refinement_count": refinement_count + 1
+                }
+                
+        except Exception as e:
+            logger.error(f"Output validation error: {e}", exc_info=True)
+            return {
+                "validation_results": {
+                    "type": "output",
+                    "passed": False,
+                    "error": str(e)
+                },
+                "validation_error": str(e),
+                "refinement_count": refinement_count
+            }
+    
+    return output_guard_node
+
+
 def create_guardrails_node(
     input_guard: Optional[Guard] = None,
     output_guard: Optional[Guard] = None,
@@ -341,4 +537,133 @@ def create_guardrails_node(
         return {"validation_results": validation_results}
     
     return guardrails_node
+
+
+def create_refinement_node(
+    model,
+    max_refinements: int = 3
+):
+    """Create a node that refines failed outputs based on validation errors.
+    
+    Args:
+        model: LLM model to use for refinement.
+        max_refinements: Maximum number of refinement attempts. Default: 3.
+        
+    Returns:
+        A function that can be used as a LangGraph node.
+    """
+    def refinement_node(state: GuardrailsState) -> Dict[str, Any]:
+        """Refine agent output based on validation errors.
+        
+        Args:
+            state: Current agent state with messages and validation results.
+            
+        Returns:
+            Updated state with refined message.
+        """
+        messages = state.get("messages", [])
+        validation_error = state.get("validation_error")
+        refinement_count = state.get("refinement_count", 0)
+        
+        if not validation_error or not messages:
+            return {}
+        
+        last_message = messages[-1]
+        
+        if not isinstance(last_message, AIMessage):
+            return {}
+        
+        if refinement_count >= max_refinements:
+            logger.error(f"Max refinements reached, returning error message")
+            error_message = AIMessage(
+                content=f"I apologize, but I was unable to generate a response that meets the safety requirements. "
+                       f"Error: {validation_error}. Please try rephrasing your query."
+            )
+            return {
+                "messages": [error_message],
+                "refinement_count": refinement_count
+            }
+        
+        try:
+            logger.info(f"Refining output (attempt {refinement_count + 1}/{max_refinements})")
+            
+            refinement_prompt = f"""Your previous response failed validation with the following error:
+{validation_error}
+
+Please refine your response to address this issue. Be sure to:
+1. Stay on-topic and relevant
+2. Avoid any inappropriate content
+3. Ensure factual accuracy
+4. Maintain a professional tone
+
+Original response that needs refinement:
+{last_message.content}
+
+Provide a refined response:"""
+            
+            refinement_message = HumanMessage(content=refinement_prompt)
+            refined_response = model.invoke([refinement_message])
+            
+            return {
+                "messages": [refined_response],
+                "refinement_count": refinement_count + 1
+            }
+            
+        except Exception as e:
+            logger.error(f"Refinement error: {e}", exc_info=True)
+            error_message = AIMessage(
+                content=f"I encountered an error while trying to refine my response. "
+                       f"Please try rephrasing your query. Error: {str(e)}"
+            )
+            return {
+                "messages": [error_message],
+                "refinement_count": refinement_count + 1
+            }
+    
+    return refinement_node
+
+
+def create_error_response_node():
+    """Create a node that generates error responses for failed validations.
+    
+    Returns:
+        A function that can be used as a LangGraph node.
+    """
+    def error_response_node(state: GuardrailsState) -> Dict[str, Any]:
+        """Generate a user-friendly error response.
+        
+        Args:
+            state: Current agent state with validation error.
+            
+        Returns:
+            Updated state with error message.
+        """
+        validation_error = state.get("validation_error")
+        validation_results = state.get("validation_results")
+        
+        if not validation_error:
+            return {}
+        
+        error_type = "input" if validation_results and validation_results.get("type") == "input" else "output"
+        
+        if error_type == "input":
+            error_message = AIMessage(
+                content="I'm sorry, but I cannot process that request. It appears to be outside my scope "
+                       "or may contain inappropriate content. Please try rephrasing your question to focus "
+                       "on student loans, financial aid, or education financing."
+            )
+        else:
+            error_message = AIMessage(
+                content="I apologize, but I was unable to generate an appropriate response. "
+                       "Please try rephrasing your question or ask about a different aspect of the topic."
+            )
+        
+        logger.warning(f"Generating error response for {error_type} validation failure")
+        
+        return {
+            "messages": [error_message],
+            "validation_error": None  # Clear error after responding
+        }
+    
+    return error_response_node
 

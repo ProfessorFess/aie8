@@ -45,7 +45,7 @@ uv run python configure_guardrails.py YOUR_API_KEY_HERE
 
 Or set it via environment variable:
 ```bash
-export GUARDRAILS_API_KEY=your_api_key_here
+export GUARDRAILS_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnaXRodWJ8NjY5Mjc2MzYiLCJhcGlLZXlJZCI6ImNhYTkwM2Q3LWNhMzAtNDYzYy04Yjk1LWExMzRjZTFhZTMzNyIsInNjb3BlIjoicmVhZDpwYWNrYWdlcyIsInBlcm1pc3Npb25zIjpbXSwiaWF0IjoxNzYxODY5MTAyLCJleHAiOjE3Njk2NDUxMDJ9.7KJ421sXXyPsIVXxfADelCEgiaiqJIynlbaB1A1Ql5o
 uv run python configure_guardrails.py
 ```
 
