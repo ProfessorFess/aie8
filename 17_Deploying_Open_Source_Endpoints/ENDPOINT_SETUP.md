@@ -40,4 +40,4 @@ What is the difference between serverless and dedicated endpoints?
 
 #### ✅ Answer:
 
-_(insert your answer here)_
+Serverless endpoints are shared, on-demand computing resources managed by the provider—they start up automatically when you send a request and scale for many users, without you needing to manage or pay for dedicated hardware. Dedicated endpoints, on the other hand, are resources reserved specifically for you: they require separate deployment (and often a minimum spend), so you have more consistent access and potentially faster responses, but you are also responsible for spinning them up and shutting them down, and you pay for compute time whether or not you are actively using them.
